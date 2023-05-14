@@ -34,7 +34,7 @@ if __name__ == '__main__':
         "--root_path_spines",
         required=True,
         dest="root_path_spines",
-        help="Root path to the vertebrae folders."
+        help="Root path to the spine folders."
     )
 
     arg_parser.add_argument(
