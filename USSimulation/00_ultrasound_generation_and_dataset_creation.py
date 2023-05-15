@@ -75,6 +75,7 @@ if __name__ == '__main__':
 
     workspace_file_obj_to_labelmap = "imfusion_workspaces/objToLabelMap_with_centered.iws"
     workspace_file_simulate_us = "imfusion_workspaces/simulate_US_and_save_segmentations_noisypcd.iws"
+    workspace_file_extract_pointcloud = "imfusion_workspaces/extract_pcd_from_US_labelmaps.iws"
 
     pipeline = args.pipeline
 
@@ -106,3 +107,11 @@ if __name__ == '__main__':
                         '--list_file_names', txt_file_lumbar_spines,
                         '--root_path_spines', root_path_spines,
                         '--nr_deform_per_spine', nr_deform_per_spine])
+
+    if 'extract_pcd' in pipeline or 'all' in pipeline:
+        subprocess.run(['python', '05_extract_pcd_from_US_labelmaps.py',
+                        '--list_file_names', txt_file_lumbar_spines,
+                        '--workspace_file', workspace_file_extract_pointcloud,
+                        '--root_path_spines', root_path_spines,
+                        '--nr_deform_per_spine', nr_deform_per_spine])
+

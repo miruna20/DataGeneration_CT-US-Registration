@@ -98,5 +98,5 @@ if __name__ == "__main__":
 
                 arguments += p + "=" + str(value) + " "
             print('ARGUMENTS: ', arguments)
-            os.system("ImFusionConsole" + " " + args.workspace_file + " " + arguments)
+            os.system("ImFusionSuite" + " " + args.workspace_file + " " + arguments)
             print('################################################### ')
