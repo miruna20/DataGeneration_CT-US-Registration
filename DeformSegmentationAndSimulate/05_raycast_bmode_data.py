@@ -43,7 +43,6 @@ def pointcloud_to_resliced_labelmap(subfolder, nr_deform, output_folder, workspa
     if len(deformed_pc) != 1:
         raise Exception(f"no deformed pc found in {subfolder} for field {nr_deform}")
 
-
     placeholders = ['SIMULATEDSWEEP', 'DEFORMEDPC', 'OUTPUTIMAGEFOLDER', 'OUTPUTTRACKING']
 
     tracking_path = os.path.join(subfolder, simulation_file[0]).replace(".imf", "tracking.ts")
