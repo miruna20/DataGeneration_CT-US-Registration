@@ -1,10 +1,6 @@
 import argparse
 import os
 
-import numpy as np
-import torchio
-import torchio as tio
-
 
 def process(root_path_spine, txt_file):
     # Read the lines from the text file
@@ -23,12 +19,12 @@ def process(root_path_spine, txt_file):
             if file_name.endswith('.txt') and 'spline' in file_name
         ]
 
-        workspace_scale_mesh = "./imfusion_workspaces/us_simulation.iws"
+        workspace_us_simulation = "./imfusion_workspaces/us_simulation.iws"
         for batch_file in batch_files:
 
             arguments_imfusion = f"batch={os.path.join(subfolder_path, batch_file)}"
             print('ARGUMENTS: ', arguments_imfusion)
-            os.system("ImFusionConsole" + " " + workspace_scale_mesh + " " + arguments_imfusion)
+            os.system("ImFusionConsole" + " " + workspace_us_simulation + " " + arguments_imfusion)
             print('################################################### ')
 
 

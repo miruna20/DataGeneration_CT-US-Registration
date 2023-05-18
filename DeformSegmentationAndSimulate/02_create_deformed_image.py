@@ -140,24 +140,6 @@ if __name__ == "__main__":
 
     arg_parser = argparse.ArgumentParser(description="Extrapolate the deformation field to cover the whole image")
 
-    # arg_parser.add_argument(
-    #     "--deformed_mesh",
-    #     required=True,
-    #     help="path to the deformed mesh"
-    # )
-    #
-    # arg_parser.add_argument(
-    #     "--non_deformed_mesh",
-    #     required=True,
-    #     help="path to the non-deformed mesh"
-    # )
-    #
-    # arg_parser.add_argument(
-    #     "--spine_image",
-    #     required=True,
-    #     help="path to the corresponding spine image"
-    # )
-
     arg_parser.add_argument(
         "--sampling_freq",
         default=50,

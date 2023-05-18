@@ -244,6 +244,20 @@
                 <param name="resizable">0</param>
             </property>
         </property>
+        <property name="Image Resampling">
+			<param name="resamplingMode">2</param>
+			<param name="targetSpacing">0.25 0.25 1 </param>
+			<param name="createNewImage">0</param>
+			<param name="keepZeroValues">1</param>
+			<param name="reductionMode">1</param>
+			<param name="interpolationMode">1</param>
+			<param name="cloneDeformation">1</param>
+			<param name="forceCPU">1</param>
+			<param name="preserveExtent">0</param>
+			<param name="verbose">0</param>
+			<param name="execute">1</param>
+			<param name="inputUids">"data1"</param>
+		</property>
         <property name="ImFusionFile">
             <param name="location">%(OUTFILE)</param>
             <param name="compressionMode">0</param>
