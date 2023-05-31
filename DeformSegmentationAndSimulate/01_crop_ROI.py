@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torchio
 import torchio as tio
 import matplotlib.pyplot as plt
-from torchio.transforms import Crop, Pad
+from torchio.transforms import Crop, Pad, Resample, ToCanonical
 
 
 def process(txt_file, root_path_spine, segmentation_folder, out_path_spine):
@@ -29,6 +29,7 @@ def process(txt_file, root_path_spine, segmentation_folder, out_path_spine):
         ]
 
         if len(nii_files) > 0:
+            print(f"cropping image for data {line}")
             # Open the first nii.gz file found using torchio
             nii_path = os.path.join(subfolder_path, nii_files[0])
             image = tio.ScalarImage(nii_path)
@@ -41,6 +42,18 @@ def process(txt_file, root_path_spine, segmentation_folder, out_path_spine):
 
             # Open the segmentation file using torchio
             segmentation = tio.LabelMap(segmentation_path)
+
+            # change to LAS if not already
+            if "".join(image.orientation) != 'LAS':
+                print(f"image of {line} is not in canonical form. transforming it")
+                t = ToCanonical()
+                image = t(image)
+                segmentation = t(segmentation)
+
+            if image.shape != segmentation.shape:  # there is a chance that output of totalsegmentator is slightly bigger
+                t = Resample(image)
+                segmentation = t(segmentation)
+
             cropped_img, cropped_seg = crop(image, segmentation)
             cropped_seg = segment_soft_tissue(cropped_img, cropped_seg)
             cropped_img.save(os.path.join(output_folder, f"{line}_cropped.nii.gz"), squeeze=True)
@@ -60,7 +73,6 @@ def segment_soft_tissue(image, segmentation: torchio.Image):
 
 
 def crop(image: torchio.Image, segmentation: torchio.Image):
-    print(image.shape)
     coronal_crop_index, end_coronal_index = mask_minimum_lateral_index(image, segmentation)
     (start_sag, end_sag, lowest_sacrum_index, lowest_t1_index) = mask_middle_part(image, segmentation)
 
@@ -122,7 +134,6 @@ def region_growing(image: torchio.Image, segmentation: torchio.Image, threshold,
         region_mask = (seg_data == region_label)
         rep += 1
 
-    print((seg_data == region_label).sum())
     return seg_data.unsqueeze(0).cpu()
 
 
@@ -195,13 +206,13 @@ def mask_middle_part(image, segmentation):
     center = H // 2
     if (center - start_sag) * image.spacing[
         0] < 100:  # if distance is less than 100 mm take at least 100m from each side
-        print("volume is to thin, need bigger slab")
+        print("volume is too thin, need bigger slab")
         start_sag = int(np.max([center - 100 // image.spacing[0], 0]))
         end_sag = int(np.min([center + 100 // image.spacing[0], H - 1]))
 
     # mask in the Z direction
     segmentation_data = segmentation.data.squeeze()
-    # find sacrum lowest point
+    # find sacrum the lowest point
     lowest_sacrum_index = 0
     for i in range(segmentation_data.shape[2]):
         slice_ = segmentation_data[:, :, i]
@@ -224,16 +235,19 @@ def mask_minimum_lateral_index(image, segmentation):
     # Get the data from the segmentation label
     segmentation_data = segmentation.data.squeeze()
 
+    bone_data = torch.where(segmentation_data == 92 | ((segmentation_data >= 18) & (segmentation_data < 27)), 1.0, 0.0)
+
     # Find the lowest index in the coronal plane that still shows bone
     lowest_coronal_index = None
-    for i in range(segmentation_data.shape[1]):
-        coronal_slice = segmentation_data[:, i, :]
+    for i in range(bone_data.shape[1]):
+        coronal_slice = bone_data[:, i, :]
         if coronal_slice.sum() > 0:
             lowest_coronal_index = i
             break
 
-    # find where we have something in the segmentation method, get the mean position
     image_data = image.data.squeeze()
+
+    # find where we have something in the segmentation method, get the mean position
     indices = (segmentation_data[:, lowest_coronal_index, :] > 0).nonzero(as_tuple=True)
     center = [indices[0].median(), indices[1].median()]
 

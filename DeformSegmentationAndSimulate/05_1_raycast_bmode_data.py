@@ -84,10 +84,13 @@ def process(args):
             file.write('IMAGESET; INPUTTS; OUTPUTSWEEP\n')
 
         for deform in range(int(args.nr_deform_per_spine)):
-
-            raycast_spine(args, deform, label_to_sweeo_batch_file, spine_id, read_source=True)
-            raycast_spine(args, deform, label_to_sweeo_batch_file, spine_id, read_source=False)
-            # raycast_deformed_spine(args, deform, label_to_sweeo_batch_file, spine_id)
+            try:
+                raycast_spine(args, deform, label_to_sweeo_batch_file, spine_id, read_source=True)
+                raycast_spine(args, deform, label_to_sweeo_batch_file, spine_id, read_source=False)
+            except Exception as e:
+                print(f"Can not run raycast for {spine_id} and deform {deform}, error: {e}")
+                continue
+                # raycast_deformed_spine(args, deform, label_to_sweeo_batch_file, spine_id)
 
         workspace_file = "./imfusion_workspaces/imageset_to_sweep.iws"
         arguments_imfusion = f"batch={label_to_sweeo_batch_file}"
@@ -114,8 +117,10 @@ def raycast_spine(args, deform, label_to_sweeo_batch_file, spine_id, read_source
     dir_name = os.path.join(args.root_path_spines, spine_id)
 
     # call imfusion to store the slice the whole spine point cloud according to the 2D image set
+
     tracking_path = pointcloud_to_resliced_labelmap(dir_name, deform, dir_save_path_full,
-                                                    "./imfusion_workspaces/labelmap_reslicing.iws", read_source=read_source)
+                                                "./imfusion_workspaces/labelmap_reslicing.iws", read_source=read_source)
+
     print("Raycasting: " + str(spine_id) + " and deformation " + str(deform))
     raycast_image_set(dir_save_path, dir_save_path_full, spine_id)
 

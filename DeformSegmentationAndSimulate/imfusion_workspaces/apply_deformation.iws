@@ -64,7 +64,6 @@
 			<param name="name">sub-verse504forcefield1_lumbar_deformedfield</param>
 			<param name="original">1</param>
 			<param name="uid">data1</param>
-			<param name="transformation">1 0 0 1.5 0 1 0 -156.615631103516 0 0 1 353.997192382812 0 0 0 1 </param>
 			<property name="Components">
 				<property name="DisplayOptions2d">
 					<param name="gamma">1</param>
@@ -121,7 +120,6 @@
 			<param name="original">1</param>
 			<param name="topDown">1</param>
 			<param name="uid">data2</param>
-			<param name="transformation">1 1.22464679914735e-16 0 0.445312499999995 1.22464679914735e-16 -1 0 159.529693603516 0 0 -1 -351.997196674347 0 0 0 1 </param>
 			<property name="Components">
 				<property name="DisplayOptions2d">
 					<param name="gamma">1</param>

@@ -65,7 +65,6 @@
 		<property name="Data">
 			<param name="uid">data1</param>
 			<param name="name">sub-verse504forcefield1_lumbar_deformed</param>
-			<param name="transformation">1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 </param>
 		</property>
 		<property name="Data">
 			<param name="original">1</param>

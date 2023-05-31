@@ -34,7 +34,7 @@
             <param name="intensityThreshold">9.99999997475243e-07</param>
             <param name="RFNoise">1e-05</param>
             <param name="TGCScaleFactor">0.1</param>
-            <param name="TGCAlpha">0.8</param>
+            <param name="TGCAlpha">0.3</param>
             <param name="rejectThreshold">0</param>
             <param name="scaleExponent1">1</param>
             <param name="scaleExponent2">0.5</param>
@@ -270,6 +270,13 @@
             <param name="input">1</param>
             <param name="outputUids"></param>
         </property>
+        <property name="2D Image Set">
+			<param name="location">%(OUT2DSET)</param>
+			<param name="skip">0</param>
+			<param name="execute">1</param>
+			<param name="input">1 </param>
+			<param name="output"/>
+		</property>
     </property>
     <property name="Datasets">
         <property name="Data">

@@ -20,7 +20,10 @@ def process(args):
             file.write(f'{"; ".join(placeholders)}\n')
 
         for deform in range(int(args.nr_deform_per_spine)):
-            process_deformed_spine(args, deform, extract_pcd_from_labelmaps_batch_file, placeholders, spine_id)
+            try:
+                process_deformed_spine(args, deform, extract_pcd_from_labelmaps_batch_file, placeholders, spine_id)
+            except Exception as e:
+                print(f"failed to extract PCD from {spine_id} for deformation {deform} with error {e}")
 
         arguments_imfusion = f"batch={extract_pcd_from_labelmaps_batch_file}"
         print('ARGUMENTS: ', arguments_imfusion)

@@ -3,11 +3,10 @@ import os
 
 import numpy as np
 import pyvista as pv
-import torchio
-from scipy.interpolate import Rbf, griddata
+import torch
 from scipy.interpolate import RBFInterpolator
-import torchio as tio
 import SimpleITK as sitk
+from torchrbf import RBFInterpolator as RBFInterpolatorGPU
 
 
 def get_range_from_image(spine_image):
@@ -55,6 +54,55 @@ def calculate_deformation(non_deformed_mesh, deformed_mesh_name, spine_image, sa
     return field_path
 
 
+def calculate_deformation_gpu(non_deformed_mesh, deformed_mesh_name, spine_image, sampling_freq, subfolder_path):
+    origin, final = get_range_from_image(spine_image)
+    ddf_spacing = [6, 6, 6]
+    non_deformed_mesh = pv.read(non_deformed_mesh)
+    deformed_mesh = pv.read(os.path.join(subfolder_path, deformed_mesh_name))
+
+    x = torch.linspace(origin[0], final[0], int((final[0] - origin[0]) // ddf_spacing[0]))
+    y = torch.linspace(origin[1], final[1], int((final[1] - origin[1]) // ddf_spacing[1]))
+    z = torch.linspace(origin[2], final[2], int((final[2] - origin[2]) // ddf_spacing[2]))
+
+    dtype = torch.float32
+
+    grid_points = torch.meshgrid(x, y, z, indexing='ij')
+    flat_points = torch.stack(grid_points, dim=-1).reshape(-1, 3).to("cuda").to(dtype)
+
+    node_def = non_deformed_mesh.points - deformed_mesh.points
+    node_def = torch.tensor(node_def[::sampling_freq, :], device="cuda").to(dtype)
+    non_deformed_mesh = torch.tensor(non_deformed_mesh.points[::sampling_freq, :], device="cuda").to(dtype)
+
+    def_grid_x = interp_1d_deformation_gpu(node_def, non_deformed_mesh, flat_points, grid_points, axis=0)
+    def_grid_y = interp_1d_deformation_gpu(node_def, non_deformed_mesh, flat_points, grid_points, axis=1)
+    def_grid_z = interp_1d_deformation_gpu(node_def, non_deformed_mesh, flat_points, grid_points, axis=2)
+
+    full_grid = torch.stack([def_grid_x, def_grid_y, def_grid_z], dim=3).to(torch.float64)
+    full_grid = torch.permute(full_grid, dims=[2, 1, 0, 3])
+
+    full_grid = full_grid.cpu().numpy().astype(np.float64)
+
+    img = sitk.GetImageFromArray(full_grid)
+    img.SetOrigin(origin)
+    img.SetSpacing(ddf_spacing)
+
+    field_path = os.path.join(subfolder_path, deformed_mesh_name.replace(".obj", "_field.mha"))
+    sitk.WriteImage(img, field_path)
+    print("deformation saved")
+
+    return field_path
+
+
+def interp_1d_deformation_gpu(node_def, non_deformed_mesh, flat_points, grid_points, axis, sampling_freq=50):
+    interp = RBFInterpolatorGPU(non_deformed_mesh, node_def[:, axis], device='cuda')
+    y_node = interp(non_deformed_mesh)
+    if (y_node - node_def[:, axis]).abs().mean() > 0.2:
+        interp = RBFInterpolatorGPU(non_deformed_mesh, node_def[:, axis], device='cuda', smoothing=0.2)
+    y_flat = interp(flat_points)
+    y_grid = torch.reshape(y_flat, grid_points[0].shape)
+    return y_grid
+
+
 def interp_1d_deformation(node_def, non_deformed_mesh, x_flat, x_grid, axis, sampling_freq=50):
     interp = RBFInterpolator(non_deformed_mesh.points[::sampling_freq, :], node_def[::sampling_freq, axis])
     y_flat = interp(x_flat)
@@ -62,7 +110,7 @@ def interp_1d_deformation(node_def, non_deformed_mesh, x_flat, x_grid, axis, sam
     return y_grid
 
 
-def process(txt_file, root_path_spine, segmentation_folder, sampling_freq):
+def process(txt_file, root_path_spine, sampling_freq):
     # Read the lines from the text file
     with open(txt_file, 'r') as file:
         lines = file.readlines()
@@ -103,9 +151,14 @@ def process(txt_file, root_path_spine, segmentation_folder, sampling_freq):
             non_deformed_file = os.path.join(subfolder_path, non_deformed_files[0])
             seg_file = os.path.join(subfolder_path, seg_files[0])
             ct_file = os.path.join(subfolder_path, ct_files[0])
+
             for deformed_file in deformed_files:
-                field_path = calculate_deformation(non_deformed_mesh=non_deformed_file, deformed_mesh_name=deformed_file,
-                                            spine_image=ct_file, sampling_freq=sampling_freq, subfolder_path=subfolder_path)
+                print(f"calculating deformation for {line} for deformation {deformed_file}")
+
+                field_path = calculate_deformation_gpu(non_deformed_mesh=non_deformed_file, deformed_mesh_name=deformed_file,
+                                                spine_image=ct_file, sampling_freq=sampling_freq, subfolder_path=subfolder_path)
+                # field_path = calculate_deformation(non_deformed_mesh=non_deformed_file, deformed_mesh_name=deformed_file,
+                #                             spine_image=ct_file, sampling_freq=sampling_freq, subfolder_path=subfolder_path)
                 apply_deformation(ct_file, seg_file, field_path, "./imfusion_workspaces/apply_deformation.iws")
 
 
@@ -142,7 +195,7 @@ if __name__ == "__main__":
 
     arg_parser.add_argument(
         "--sampling_freq",
-        default=50,
+        default=100,
         help="sampling rate from the meshes, default=50"
     )
 
@@ -160,17 +213,8 @@ if __name__ == "__main__":
         help="Txt file that contains all spines that contain all lumbar vertebrae"
     )
 
-    arg_parser.add_argument(
-        "--segmentation_folder",
-        required=True,
-        help="folder containing the output of the total segmentator"
-    )
-
     print("Calculating the deformation over the whole image")
     #
     args = arg_parser.parse_args()
 
-    process(txt_file=args.txt_file, root_path_spine=args.root_path_spine,
-            segmentation_folder=args.segmentation_folder, sampling_freq=args.sampling_freq)
-    # calculate_deformation(non_deformed_mesh=args.non_deformed_mesh, deformed_mesh=args.deformed_mesh,
-    #                       spine_image=args.spine_image, sampling_freq=args.sampling_freq)
+    process(txt_file=args.txt_file, root_path_spine=args.root_path_spine, sampling_freq=args.sampling_freq)

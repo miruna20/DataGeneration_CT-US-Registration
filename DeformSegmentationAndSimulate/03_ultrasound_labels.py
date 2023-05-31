@@ -1,7 +1,9 @@
 import argparse
 import os
+import shutil
 
 import numpy as np
+import SimpleITK as sitk
 import torchio
 import torchio as tio
 
@@ -16,18 +18,18 @@ def process(root_path_spine, txt_file):
         line = line.strip()  # Remove leading/trailing whitespaces
         subfolder_path = os.path.join(root_path_spine, f"sub-{line}/")
 
-        # Find the nii.gz file without 'seg' in its name
+        # Find the nii.gz file with 'seg' in its name
         nii_files = [
             file_name
             for file_name in os.listdir(subfolder_path)
-            if file_name.endswith('.nii.gz') and 'seg' in file_name and "deformed" in file_name
+            if file_name.endswith('.nii.gz') and 'seg' in file_name and "deformed" in file_name and 'sim' not in file_name
         ]
 
         batch_file_path = os.path.join(subfolder_path, f"{line}_spline_position.txt")
         if os.path.exists(batch_file_path):
             os.remove(batch_file_path)
         with open(batch_file_path, 'w') as file:
-            file.write('OUTFILE; TRASSPLINE; DIRECTIONSPLINE; INFILE\n')
+            file.write('OUTFILE; OUT2DSET; TRASSPLINE; DIRECTIONSPLINE; INFILE\n')
 
         for nii_file in nii_files:
 
@@ -37,12 +39,16 @@ def process(root_path_spine, txt_file):
 def prepare_us_simulation(batch_file_path, line, nii_file, subfolder_path):
     # Open the nii.gz file found using torchio
     nii_path = os.path.join(subfolder_path, nii_file)
-    image = tio.LabelMap(nii_path)
+    image = tio.ScalarImage(nii_path)
     print(f"Loaded image: {nii_path}")
     save_path = os.path.join(subfolder_path, nii_file.replace("_seg.nii.gz", "_seg_sim.nii.gz"))
     # create the txt input for ultrasound simulation
     sim_output_path = os.path.join(subfolder_path, nii_file.replace("_seg.nii.gz", "_us_sim.imf"))
-    argument = calculate_splines(segmentation=image, output_path=sim_output_path, file_path=save_path)
+    sim_output_folder = os.path.join(subfolder_path, nii_file.replace("_lumbar_deformed_seg.nii.gz", "_us_set"))
+    if os.path.exists(sim_output_folder):
+        shutil.rmtree(sim_output_folder)
+    os.makedirs(sim_output_folder)
+    argument = calculate_splines(segmentation=image, output_path=sim_output_path, output_folder=sim_output_folder, file_path=save_path)
     # Open the file in write mode
     with open(batch_file_path, 'a') as file:
         file.write(f'{argument}\n')
@@ -64,15 +70,21 @@ def replace_labels(image, save_path):
     image.save(save_path)
 
 
-def calculate_splines(segmentation: torchio.Image, output_path, file_path):
+def calculate_splines(segmentation: torchio.Image, output_path, output_folder, file_path):
 
     segmentation_data = segmentation.data.squeeze()
     # find sacrum lowest point
-    lowest_l5_index = 0
+    lowest_sacrum_index = 0
     for i in range(segmentation_data.shape[2]):
         slice_ = segmentation_data[:, :, i]
-        if (slice_ == 18).sum() > 0:
-            lowest_l5_index = i
+        if (slice_ == 92).sum() > 0 and (slice_ == 18).sum() == 0:
+            lowest_sacrum_index = i
+            break
+    lowest_t11_index = 0
+    for i in range(segmentation_data.shape[2]):
+        slice_ = segmentation_data[:, :, i]
+        if (slice_ == 23).sum() > 0:
+            lowest_t11_index = i
             break
     # find the lateral lowest point
     lowest_lateral_index = 0
@@ -88,22 +100,24 @@ def calculate_splines(segmentation: torchio.Image, output_path, file_path):
     x = segmentation_data.shape[0] // 2
     y1 = np.max([lowest_lateral_index - margin // segmentation.spacing[1], 0])
     y2 = y1 + 100 // segmentation.spacing[1]  # for the direction spline
-    z2 = 0 #segmentation_data.shape[2]
-    z1 = segmentation_data.shape[2] - lowest_l5_index
+    z2 = lowest_t11_index #segmentation_data.shape[2]
+    z1 = lowest_sacrum_index
 
-    fixing_vector = np.array([1, -1, 1])
+    # fixing_vector = np.array([1, -1, 1])
 
-    point1 = fixing_vector * (segmentation.affine @ np.array([x, y1, z1, 1]))[:3]
-    point2 = fixing_vector * (segmentation.affine @ np.array([x, y1, z2, 1]))[:3]
+    sitk_image = sitk.ReadImage(segmentation.path)
+
+    point1 = sitk_image.TransformContinuousIndexToPhysicalPoint(np.array([x, y1, z1])) # fixing_vector * (segmentation.affine @ np.array([x, y1, z1, 1]))[:3]
+    point2 = sitk_image.TransformContinuousIndexToPhysicalPoint(np.array([x, y1, z2])) # fixing_vector * (segmentation.affine @ np.array([x, y1, z2, 1]))[:3]
     trans_spline = np.concatenate([point1, point2], axis=0)
 
-    point3 = fixing_vector * (segmentation.affine @ np.array([x, y2, z1, 1]))[:3]
-    point4 = fixing_vector * (segmentation.affine @ np.array([x, y2, z2, 1]))[:3]
+    point3 = sitk_image.TransformContinuousIndexToPhysicalPoint(np.array([x, y2, z1])) # fixing_vector * (segmentation.affine @ np.array([x, y2, z1, 1]))[:3]
+    point4 = sitk_image.TransformContinuousIndexToPhysicalPoint(np.array([x, y2, z2])) # fixing_vector * (segmentation.affine @ np.array([x, y2, z2, 1]))[:3]
     dir_spline = np.concatenate([point3, point4], axis=0)
 
     print(trans_spline)
     print(dir_spline)
-    arguments = f"{output_path}; {' '.join(map(str, trans_spline.tolist()))}; {' '.join(map(str, dir_spline.tolist()))}; {file_path}"
+    arguments = f"{output_path}; {output_folder}; {' '.join(map(str, trans_spline.tolist()))}; {' '.join(map(str, dir_spline.tolist()))}; {file_path}"
 
     return arguments
 

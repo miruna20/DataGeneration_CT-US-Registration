@@ -20,3 +20,12 @@
 ## segment the soft tissue
 
 ## create the batch file to run ImFusionConsole
+
+
+## to run the pipeline:
+```shell
+python 00_segment_and_simulate_pipeline.py --root_path_spines /mnt/HDD1/farid/spine_verse/data_generation/spines/01_training/ --root_path_vertebrae /mnt/HDD1/farid/spine_verse/data_generation/vertebrae/01_training/ --list_file_names all_spines.txt --nr_deform_per_spine 10 --verse_path /mnt/projects/deepSpine/VERSE20/training_data/  --segmentation_folder /mnt/HDD1/farid/spine_verse/data_generation/spines/segmentations/
+```
+## Failures
+
+507 and 525 failed
