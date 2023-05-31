@@ -30,3 +30,7 @@ SOFA_ROOT=/home/farid/SOFA/v22.12.00/ LD_LIBRARY_PATH="/home/farid/SOFA/v22.12.0
 ```
 
 - then `import Sofa` and the rest should work
+
+## NOTICE
+
+verse 561 and 584 failed

@@ -32,7 +32,8 @@ def get_vertebrae_meshes_from_filenames(root_folder, spine_name):
             list(
                 pathlib.Path(path).glob('*scaled_msh.obj'))
         if (len(pathVertebra) != 1):
-            raise "There are multiple obj file for this vertebra: " + str(spine_id)
+            print(pathVertebra, path)
+            raise Exception("There are multiple obj file for this vertebra: " + str(spine_id) + " " + str(i))
         mesh = o3d.io.read_triangle_mesh(str(pathVertebra[0]))
         # print("Path vertebra: " + str(pathVertebra[0]))
         vertebrae_meshes.append(mesh)

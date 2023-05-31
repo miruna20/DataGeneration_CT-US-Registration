@@ -75,7 +75,7 @@ if __name__ == "__main__":
         # find original vertebrae as obj files
         merge_obj_files(
             look_for="**/*" + str(spine_id) + '*_msh.obj',
-            save_to= os.path.join(args.root_path_spines,spine_id,spine_id  + "lumbar_msh.obj"),
+            save_to= os.path.join(args.root_path_spines,spine_id,spine_id  + "_lumbar_msh.obj"),
             root_path_vertebrae=args.root_path_vertebrae,
             placeholders=placeholders
         )

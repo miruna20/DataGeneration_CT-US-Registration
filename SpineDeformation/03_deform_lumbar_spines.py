@@ -1,14 +1,24 @@
+import os
+import argparse
+import json
+import glob
+import sys
+import random
+import numpy as np
+
+# set these in terminal before running:
+os.environ['SOFA_ROOT'] = '/home/farid/SOFA/v22.12.00/'
+existing_value = os.environ.get('LD_LIBRARY_PATH', '')
+new_value = "/home/farid/SOFA/v22.12.00/lib/:/home/farid/SOFA/v22.12.00/collections/SofaSimulation/lib/:" + existing_value
+os.environ['LD_LIBRARY_PATH'] = new_value
+
+print(os.environ.get('LD_LIBRARY_PATH'))
+
 import Sofa
 import Sofa.Core
 import SofaRuntime
 import Sofa.Gui
 
-import argparse
-import json
-import os
-import glob
-import sys
-import random
 
 SofaRuntime.importPlugin("Sofa.Component.StateContainer")
 SofaRuntime.importPlugin("SofaOpenglVisual")
@@ -260,7 +270,7 @@ def deform_one_spine(spine_id, path_json_file, root_path_vertebrae, constant_for
 
 def deform_all_spines(txt_file, json_root_folder, vertebrae_root_folder, nr_deformations_per_spine, forces_folder, anterior):
     if (txt_file == None or json_root_folder == None or vertebrae_root_folder == None):
-        raise "Please provide all parameters: txt_file, json_root_folder and vertebrae_root_folder when calling the script for deformation of all spines "
+        raise Exception("Please provide all parameters: txt_file, json_root_folder and vertebrae_root_folder when calling the script for deformation of all spines ")
         return
     # algo for processing multiple spines
     # open txt file with list of files
@@ -274,7 +284,7 @@ def deform_all_spines(txt_file, json_root_folder, vertebrae_root_folder, nr_defo
         json_path = os.path.join(json_root_folder, spine_id + ".json")
 
         for nr_deform in range(nr_deformations_per_spine):
-            force_field = get_force_field(anterior=True)
+            force_field = get_force_field(anterior=np.random.uniform(size=1) > 0.5)  # randomly switch between anterior and posterior
 
             # save the current force field:
             force_fields_for_one_deformation = open(os.path.join(forces_folder, spine_id +  "_" + str(nr_deform) + ".txt"), "w")
