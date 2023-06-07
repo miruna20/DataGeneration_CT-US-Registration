@@ -69,7 +69,8 @@ def create_imfusion_args(extract_pcd_from_labelmaps_batch_file, path_to_raycaste
                          tracking_path, vertebra):
     values_to_remove = ['18', '19', '20', '21', '22', '23', '92']
     # the current level of the vertebra we keep, the rest of the labels we replace with 0
-    values_to_remove.remove(str(vertebra - 2))
+    l_number = vertebra - 19
+    values_to_remove.remove(str(23 - l_number))
     # create arguments list to call ImFusion with
     arguments = ""
     for p in placeholders:

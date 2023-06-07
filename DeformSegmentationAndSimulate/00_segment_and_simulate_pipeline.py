@@ -130,3 +130,12 @@ if __name__ == '__main__':
                         '--root_path_vertebrae', root_path_vertebrae,
                         '--nr_deform_per_spine', nr_deform_per_spine
                         ])
+
+    if 'extract_pcd_network' in pipeline or 'all' in pipeline:
+        subprocess.run(['python', "07_extract_pcd_from_network_output_cleanpcd.py",
+                        '--list_file_names', txt_file_lumbar_spines,
+                        '--workspace_file', "./imfusion_workspaces/extract_pcd_from_US_labelmaps_cleanpcd.iws",
+                        '--root_path_spines', root_path_spines,
+                        '--root_path_vertebrae', root_path_vertebrae,
+                        '--nr_deform_per_spine', nr_deform_per_spine
+                        ])

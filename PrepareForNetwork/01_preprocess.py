@@ -2,19 +2,20 @@ import argparse
 import json
 import re
 
-import visualization_utils as utils
-from scipy.spatial import KDTree
 import numpy as np
-import math
-import os
-import pyvista as pv
 import open3d as o3d
+import pyvista as pv
+from scipy.spatial import KDTree
+import torch
+import torch.nn.functional as F
+
+import visualization_utils as utils
 
 list_files = "/Users/janelameski/Desktop/jane/sofa/SOFAZIPPED/install/bin/" + "txtFiles/"
 
 
 import os
-from shutil import copy2
+
 
 # def extract_spine_id(filename):
 #     """
@@ -102,7 +103,10 @@ class Point:
 
     @staticmethod
     def from_array(a):
-        return Point(a[0], a[1], a[2], 0)
+        if a.shape[0] == 4:
+            return Point(a[0], a[1], a[2], a[3])
+        else:
+            return Point(a[0], a[1], a[2], 0)
 
     def __str__(self):
         return f"[{self.x}, {self.y}, {self.z}, {self.color}]"
@@ -248,17 +252,6 @@ def points2indexes_exact(point_list, point_cloud, is_point=True):
     _, idx_2 = kdtree.query(p2_list, 1)
     idxes_list = list(zip(idx_1, idx_2))
 
-    # idxes_list = []
-    # for item in point_list:
-    #     if isinstance(item, tuple) or isinstance(item, list):
-    #         assert all(isinstance(x, Point) for x in item)
-    #         pc = point_cloud[:, :3]
-    #         p1, p2 = zip(*source_list)
-    #         idxes_list.append(tuple(np.where((pc == p._get_pt_as_array()).all(axis=1))[0][0] for p in item))
-    #
-    #     else:
-    #         idxes_list.append(item.get_closest_point_in_cloud(point_cloud[0]))
-
     return idxes_list
 
 
@@ -389,7 +382,7 @@ def save_for_sanity_check(data, save_dir):
     utils.write_on_file(imf_tree, os.path.join(save_folder_path, "imf_ws.iws"))
 
 
-def read_vert_pcs(subfolder_path_vert, raycasted=False, source=False, nr_deform=-1):
+def read_vert_pcs(subfolder_path_vert, raycasted=False, source=False, nr_deform=-1, use_net_output=False):
     lumbar_vertebrae = ["verLev20", "verLev21", "verLev22", "verLev23", "verLev24"]
 
     vert_pcs = {}
@@ -397,36 +390,44 @@ def read_vert_pcs(subfolder_path_vert, raycasted=False, source=False, nr_deform=
         obj_folder = f"{subfolder_path_vert}_{level}"
         # Find the non-deformed mesh
         if not raycasted:
-            non_deformed_files = [
+            pcd_files = [
                 file_name
                 for file_name in os.listdir(obj_folder)
                 if file_name.endswith(
                     '.obj') and 'centered' not in file_name and 'scaled' not in file_name and 'deformed' not in file_name
             ]
         elif raycasted and not source:
-            non_deformed_files = [
-                file_name
-                for file_name in os.listdir(obj_folder)
-                if file_name.endswith(
-                    '.pcd') and f"forces{nr_deform}" in file_name and "deformed" in file_name and "raycast" in file_name
-            ]
+            if use_net_output:
+                pcd_files = [
+                    file_name
+                    for file_name in os.listdir(obj_folder)
+                    if file_name.endswith(
+                        '.pcd') and f"forces{nr_deform}" in file_name and "deformed" in file_name and "net_output" in file_name
+                ]
+            else:
+                pcd_files = [
+                    file_name
+                    for file_name in os.listdir(obj_folder)
+                    if file_name.endswith(
+                        '.pcd') and f"forces{nr_deform}" in file_name and "deformed" in file_name and "raycast" in file_name
+                ]
         else:
-            non_deformed_files = [
+            pcd_files = [
                 file_name
                 for file_name in os.listdir(obj_folder)
                 if file_name.endswith(
                     '.pcd') and f"forces{nr_deform}" in file_name and "deformed" not in file_name and "raycast" in file_name
             ]
-        if len(non_deformed_files) != 1:
-            print(f"found {len(non_deformed_files)} meshes for vertebra {level} in {subfolder_path_vert} for deformation {nr_deform}")
+        if len(pcd_files) != 1:
+            print(f"found {len(pcd_files)} meshes for vertebra {level} in {subfolder_path_vert} for deformation {nr_deform}")
             return None
 
         number = re.findall(r'\d+', level)[0]
 
         if raycasted:
-            vert_pcs[f"vert{int(number)-19}"] = o3d.io.read_point_cloud(os.path.join(obj_folder, non_deformed_files[0]))
+            vert_pcs[f"vert{int(number)-19}"] = o3d.io.read_point_cloud(os.path.join(obj_folder, pcd_files[0]))
         else:
-            vert_pcs[f"vert{int(number)-19}"] = pv.read(os.path.join(obj_folder, non_deformed_files[0]))
+            vert_pcs[f"vert{int(number)-19}"] = pv.read(os.path.join(obj_folder, pcd_files[0]))
 
     return vert_pcs
 
@@ -443,6 +444,8 @@ def read_json_file(root_path_vert, line, source_vertebrae):
     # Initialize an empty dictionary
     result = []
     facet = {}
+
+    levels = {'vert1':1, 'vert2':2, 'vert3':3, 'vert4':4, 'vert5':5}
     # Iterate over each key in the "springs" dictionary
     for key, value in data['springs'].items():
         points = []
@@ -452,8 +455,13 @@ def read_json_file(root_path_vert, line, source_vertebrae):
 
         key1 = [key_ for key_ in source_vertebrae.keys() if key[1] in key_][0]
         key2 = [key_ for key_ in source_vertebrae.keys() if key[3] in key_][0]
+
+        print(f'key1-key2 is {key1}-{key2}')
+
         vert1_points = source_vertebrae[key1].points.__array__()
+        vert1_points = np.concatenate((vert1_points, np.ones((vert1_points.shape[0], 1)) * levels[key1]), axis=1)
         vert2_points = source_vertebrae[key2].points.__array__()
+        vert2_points = np.concatenate((vert2_points, np.ones((vert2_points.shape[0], 1)) * levels[key2]), axis=1)
 
         # Extract the start and end points for each key
         for _, sub_value in value.items():
@@ -496,15 +504,15 @@ def read_full_spine_mesh(subfolder, nr_deform=-1):
     return pc
 
 
-def match_the_flow(flow, preprocessed_source_spine):
-    kdtree = KDTree(flow[:, :3])
+def match_the_flow(flow, preprocessed_source_spine, full_source_w_level):
+    kdtree = KDTree(full_source_w_level[:, :3])
     _, points = kdtree.query(preprocessed_source_spine[:, :3], 1)
 
-    full_flow = flow[points, :]
-    return full_flow
+    sub_flow = flow[points, :]
+    return sub_flow
 
 
-def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_deformations):
+def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_deformations, use_net_output: bool):
     """
     Preprocess the data for a given spine dataset. Specifically, for the given spine (i.e. for a given spine_id),
     it ierates over all the timestamps for that given spine.
@@ -543,7 +551,8 @@ def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_d
     for i, vertebra in enumerate(["vert1", "vert2", "vert3", "vert4", "vert5"]):
         l_ = len(source_vertebrae_full[vertebra].points)
         full_source_w_level.append(np.concatenate((source_vertebrae_full[vertebra].points, np.ones((l_, 1)) * i + 1), axis=1))
-    full_source_w_level = np.concatenate(full_source_w_level, axis=0)[sorting]
+    # full_source_w_level = np.concatenate(full_source_w_level, axis=0)[sorting]
+    full_source_w_level = np.concatenate(full_source_w_level, axis=0)
     # Load the biomechanical constraints for the selected spine. biomechanical_constraints is loaded as a list
     # of tuples (Point, Point). biomechanical_constraints = [(Point, Point), (Point, Point), ..., (Point, Point)]
     # For a given tuple, the first element is the point from which the spring starts, the second point is the point
@@ -561,7 +570,7 @@ def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_d
 
         # Getting the target vertebrae dict, as {"vert1" : np.array(..), "vert2" : np.array(..),
         # "vert3" : np.array(..), "vert4" : np.array(..), "vert5" : np.array(..)}
-        deformed_vertebrae = read_vert_pcs(subfolder_path_vert, raycasted=True, source=False, nr_deform=num)
+        deformed_vertebrae = read_vert_pcs(subfolder_path_vert, raycasted=True, source=False, nr_deform=num, use_net_output=use_net_output)
         if deformed_vertebrae is None:
             continue
 
@@ -587,11 +596,12 @@ def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_d
 
         deformed_spine = read_full_spine_mesh(subfolder_path_spine, nr_deform=num)
 
-        full_flow = deformed_spine.points[sorting] - full_source_spine.points[sorting]
+        # full_flow = deformed_spine.points[sorting] - full_source_spine.points[sorting]
+        full_flow = deformed_spine.points - full_source_spine.points
 
         print(f"for spine {line} and deformation {num}: avg. def: {np.mean(full_flow)} and max. def: {np.max(np.abs(full_flow))}")
         # find the flow for the nodes in preprocessed_source_spine
-        flow = match_the_flow(full_flow, preprocessed_source_spine)
+        flow = match_the_flow(full_flow, preprocessed_source_spine, full_source_w_level)
 
 
         # Append the generated source-target pair to the data list
@@ -604,16 +614,39 @@ def preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_d
             "flow": flow,
             "full_flow": full_flow,
             "biomechanical_constraint": biomechanical_constraints,
-            "full_source_pc": full_source_spine.points[sorting],
-            "full_deformed_pc": deformed_spine.points[sorting],
+            "full_source_pc": full_source_spine.points, #[sorting],
+            "full_deformed_pc": deformed_spine.points, #[sorting],
             "full_source_w_level": full_source_w_level
         }
 
+        if not rigidity_check(data_["source_pc"], data_["flow"]):
+            continue
+
         add_biomechanical_constraints_to_raycasted(data_)
+
+        if not rigidity_check(data_["source_pc"], data_["flow"]):
+            print("not rigid after constraints")
+            continue
 
         data.append(data_)
 
     return data, facets
+
+
+def rigidity_check(preprocessed_source_spine, flow):
+
+    points_source = torch.tensor(preprocessed_source_spine[preprocessed_source_spine[:, 3] == 1])[None, ...]
+    dist_source = torch.cdist(points_source, points_source).view(-1)
+    flow_pred = torch.tensor(flow[preprocessed_source_spine[:, 3] == 1])[None, ...]
+    points_pred = points_source[..., :3] + flow_pred
+    dist_pred = torch.cdist(points_pred, points_pred).view(-1)
+    rigidity = F.mse_loss(dist_pred, dist_source)
+    print(f"rigidity loss is: {rigidity}")
+    if rigidity > 3e-1:
+        print("Flow is not rigid anymore")
+        return False
+    else:
+        return True
 
 
 def add_biomechanical_constraints_to_raycasted(data):
@@ -622,9 +655,27 @@ def add_biomechanical_constraints_to_raycasted(data):
                                               point_cloud=data["full_source_w_level"], is_point=True)
 
     constraint_points, constraint_flows = [], []
-    for (p1_idx, p2_idx) in constraint_indexes:
+    for i, (p1_idx, p2_idx) in enumerate(constraint_indexes):
         p1_colored, p2_colored = data["full_source_w_level"][p1_idx, :], data["full_source_w_level"][p2_idx, :]
         p1_flow, p2_flow = data["full_flow"][p1_idx, :], data["full_flow"][p2_idx, :]
+
+        if p1_colored[3] + 1 != p2_colored[3]:
+            continue
+
+        if sum((data["biomechanical_constraint"][i][0]._get_pt_as_array() - p1_colored[:3]) ** 2) > 1e-5:
+            print("shit")
+
+        if (data["biomechanical_constraint"][i][0].color - p1_colored[3]) != 0:
+            print(i, data["biomechanical_constraint"][i][0].color, p1_colored[3])
+            # p1_colored[3] = data["biomechanical_constraint"][i][0].color
+            print("shit1")
+        if (data["biomechanical_constraint"][i][1].color - p2_colored[3]) != 0:
+            print(i, data["biomechanical_constraint"][i][1].color, p2_colored[3])
+            # p2_colored[3] = data["biomechanical_constraint"][i][1].color
+            print("shit2")
+
+        if sum((data["biomechanical_constraint"][i][1]._get_pt_as_array() - p2_colored[:3]) ** 2) > 1e-5:
+            print("shit3")
 
         constraint_points.append((p1_colored, p2_colored))
         constraint_flows.append((p1_flow, p2_flow))
@@ -641,8 +692,10 @@ def add_biomechanical_constraints_to_raycasted(data):
     # data["target_pc"] = data["target_pc"][target_ray_casted_idxes]
 
     # Adding the biomechanical constraints to the source as they might be not present due to the ray-casting
-    new_constraints_idx = []
     p1, p2 = zip(*constraint_points)
+    # sanity check: this list should be empty:
+    # [(p1_, p2_) for p1_, p2_ in zip(p1, p2) if p1_[3] + 1 != p2_[3]]
+
     data["source_pc"] = np.concatenate((data["source_pc"], np.reshape(p1, [p1.__len__(), 4])))
     data["source_pc"] = np.concatenate((data["source_pc"], np.reshape(p2, [p2.__len__(), 4])))
 
@@ -664,7 +717,7 @@ def save_facets(facets, save_path):
                 file.write(f"{point.x} {point.y} {point.z} {idx + 1}\n")
 
 
-def generate_npz_files(root_path_spine, root_path_vert, txt_file, dst_npz_path, number_of_deformations):
+def generate_npz_files(root_path_spine, root_path_vert, txt_file, dst_npz_path, number_of_deformations, use_net_output: bool):
     if not os.path.exists(dst_npz_path):
         os.makedirs(dst_npz_path)
 
@@ -678,7 +731,7 @@ def generate_npz_files(root_path_spine, root_path_vert, txt_file, dst_npz_path, 
 
         print(f"processing folder {line}")
 
-        data_array, facets = preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_deformations)
+        data_array, facets = preprocess_spine_data_new(root_path_spine, root_path_vert, line, number_of_deformations, use_net_output)
 
         if data_array is None:
             continue
@@ -744,9 +797,22 @@ if __name__ == "__main__":
         help="Number of deformations per spine"
     )
 
+    arg_parser.add_argument(
+        "--output_folder",
+        required=True,
+        help="path to the output folder"
+    )
+
+    arg_parser.add_argument(
+        "--use_net_output",
+        action='store_true',
+        default=False,
+        help="use the segmentation output of the network"
+    )
+
     print("Preprocessing to get the network ready data")
     #
     args = arg_parser.parse_args()
 
     generate_npz_files(args.root_path_spine, args.root_path_vert, args.txt_file,
-                       "/mnt/HDD1/farid/spine_verse/data_generation/model_input/", args.nr_deform_per_spine)
+                       args.output_folder, args.nr_deform_per_spine, args.use_net_output)
